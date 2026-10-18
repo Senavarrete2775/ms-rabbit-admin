@@ -1,0 +1,19 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: ms-rabbit-admin
+
+  # Configuración de Conexión a RabbitMQ para tareas administrativas
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+# Configuración de Logging
+logging:
+  level:
+    cl.tnt.admin: DEBUG
+    org.springframework.amqp: INFO
