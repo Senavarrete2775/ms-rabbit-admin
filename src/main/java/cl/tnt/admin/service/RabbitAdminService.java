@@ -6,7 +6,6 @@ import cl.tnt.admin.dto.QueueRequestDTO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Binding;
-import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.CustomExchange;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Exchange;
@@ -18,9 +17,13 @@ import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
+import java.util.concurrent.ConcurrentSkipListSet;
 
 /**
  * Servicio dedicado para encapsular toda la lógica administrativa de RabbitMQ (Indicador 7 - 100%).
@@ -34,6 +37,12 @@ public class RabbitAdminService {
 
     private final RabbitAdmin rabbitAdmin;
 
+    // Registro en memoria de colas activas para visualización en tiempo real
+    private final Set<String> colasRegistradas = new ConcurrentSkipListSet<>(Set.of(
+            "pedidos.notificacion.queue",
+            "pedidos.dlq"
+    ));
+
     public RabbitAdminService(RabbitAdmin rabbitAdmin) {
         this.rabbitAdmin = rabbitAdmin;
     }
@@ -42,10 +51,11 @@ public class RabbitAdminService {
      * Declara dinámicamente una nueva cola en RabbitMQ con soporte para DLQ.
      */
     public Map<String, Object> crearCola(QueueRequestDTO dto) {
+        String cleanName = dto.getName().trim();
         log.info("Creando cola '{}' en RabbitMQ (durable={}, exclusive={}, autoDelete={})",
-                dto.getName(), dto.isDurable(), dto.isExclusive(), dto.isAutoDelete());
+                cleanName, dto.isDurable(), dto.isExclusive(), dto.isAutoDelete());
 
-        QueueBuilder builder = dto.isDurable() ? QueueBuilder.durable(dto.getName()) : QueueBuilder.nonDurable(dto.getName());
+        QueueBuilder builder = dto.isDurable() ? QueueBuilder.durable(cleanName) : QueueBuilder.nonDurable(cleanName);
         
         if (dto.isExclusive()) {
             builder.exclusive();
@@ -54,7 +64,6 @@ public class RabbitAdminService {
             builder.autoDelete();
         }
 
-        // Si se especificó Dead Letter Exchange para la cola
         if (dto.getDeadLetterExchange() != null && !dto.getDeadLetterExchange().isBlank()) {
             builder.withArgument("x-dead-letter-exchange", dto.getDeadLetterExchange().trim());
             if (dto.getDeadLetterRoutingKey() != null && !dto.getDeadLetterRoutingKey().isBlank()) {
@@ -64,10 +73,13 @@ public class RabbitAdminService {
 
         Queue queue = builder.build();
         String declaredName = rabbitAdmin.declareQueue(queue);
+        if (declaredName != null) {
+            colasRegistradas.add(declaredName);
+        }
 
         Map<String, Object> response = new HashMap<>();
         response.put("mensaje", "Cola creada o verificada exitosamente en RabbitMQ");
-        response.put("nombre", declaredName);
+        response.put("nombre", declaredName != null ? declaredName : cleanName);
         response.put("durable", dto.isDurable());
         response.put("dlx", dto.getDeadLetterExchange());
         response.put("dlqRoutingKey", dto.getDeadLetterRoutingKey());
@@ -78,15 +90,41 @@ public class RabbitAdminService {
      * Elimina una cola existente por su nombre.
      */
     public boolean eliminarCola(String queueName) {
-        log.info("Eliminando cola '{}' de RabbitMQ", queueName);
-        return rabbitAdmin.deleteQueue(queueName);
+        String cleanName = queueName.trim();
+        log.info("Eliminando cola '{}' de RabbitMQ", cleanName);
+        boolean eliminada = rabbitAdmin.deleteQueue(cleanName);
+        colasRegistradas.remove(cleanName);
+        return eliminada;
+    }
+
+    /**
+     * Lista todas las colas administradas con sus estadísticas actuales.
+     */
+    public List<Map<String, Object>> listarColas() {
+        List<Map<String, Object>> lista = new ArrayList<>();
+        for (String nombre : colasRegistradas) {
+            Map<String, Object> info = new HashMap<>();
+            info.put("nombre", nombre);
+            Properties props = rabbitAdmin.getQueueProperties(nombre);
+            if (props != null) {
+                info.put("existe", true);
+                info.put("mensajes", props.get(RabbitAdmin.QUEUE_MESSAGE_COUNT));
+                info.put("consumidores", props.get(RabbitAdmin.QUEUE_CONSUMER_COUNT));
+            } else {
+                info.put("existe", false);
+                info.put("mensajes", 0);
+                info.put("consumidores", 0);
+            }
+            lista.add(info);
+        }
+        return lista;
     }
 
     /**
      * Obtiene propiedades y estadísticas básicas de una cola.
      */
     public Map<String, Object> obtenerDetalleCola(String queueName) {
-        Properties properties = rabbitAdmin.getQueueProperties(queueName);
+        Properties properties = rabbitAdmin.getQueueProperties(queueName.trim());
         Map<String, Object> resultado = new HashMap<>();
         if (properties == null) {
             resultado.put("existe", false);
@@ -95,7 +133,7 @@ public class RabbitAdminService {
         }
 
         resultado.put("existe", true);
-        resultado.put("nombre", queueName);
+        resultado.put("nombre", queueName.trim());
         resultado.put("mensajesPendientes", properties.get(RabbitAdmin.QUEUE_MESSAGE_COUNT));
         resultado.put("consumidoresActivos", properties.get(RabbitAdmin.QUEUE_CONSUMER_COUNT));
         return resultado;

@@ -14,19 +14,24 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Map;
 
 /**
  * Controlador REST para la Administración de RabbitMQ.
  * Cumple con los Indicadores 6, 7 y 8 de la Pauta:
- * - Expone endpoints REST claros: POST /queues, DELETE /queues/{name}, POST /exchanges, POST /bindings.
+ * - Expone endpoints REST claros: POST /queues, DELETE /queues/{name}, GET /queues, POST /exchanges, POST /bindings.
  * - Toda la lógica está delegada a RabbitAdminService (sin lógica de broker en el controlador).
  * - Valida DTOs con @Valid para prevenir nombres vacíos y configuraciones erróneas.
  */
 @RestController
-@CrossOrigin(origins = "*")
+@CrossOrigin(
+        origins = "*",
+        methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.DELETE, RequestMethod.PUT, RequestMethod.OPTIONS}
+)
 @RequestMapping
 public class RabbitAdminController {
 
@@ -50,8 +55,17 @@ public class RabbitAdminController {
     }
 
     // =========================================================================
-    // GESTIÓN DE COLAS (QUEUES) - Indicador 6 y 8
+    // GESTIÓN DE COLAS (QUEUES) - Indicadores 6 y 8
     // =========================================================================
+
+    /**
+     * Listar colas registradas y sus estadísticas en tiempo real.
+     * GET /queues o GET /api/admin/queues
+     */
+    @GetMapping({"/queues", "/api/admin/queues"})
+    public ResponseEntity<List<Map<String, Object>>> listarColas() {
+        return ResponseEntity.ok(rabbitAdminService.listarColas());
+    }
 
     /**
      * Crear una nueva cola con validación estricta de parámetros.
@@ -82,18 +96,13 @@ public class RabbitAdminController {
      */
     @DeleteMapping({"/queues/{name}", "/api/admin/queues/{name}"})
     public ResponseEntity<Map<String, Object>> eliminarCola(@PathVariable("name") String name) {
-        boolean eliminada = rabbitAdminService.eliminarCola(name);
-        if (eliminada) {
-            return ResponseEntity.ok(Map.of(
-                    "status", "OK",
-                    "mensaje", "La cola '" + name + "' fue eliminada exitosamente de RabbitMQ."
-            ));
-        } else {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
-                    "status", "NOT_FOUND",
-                    "mensaje", "La cola '" + name + "' no existía o no pudo ser eliminada."
-            ));
-        }
+        boolean eliminada = rabbitAdminService.eliminarCola(name.trim());
+        return ResponseEntity.ok(Map.of(
+                "status", "OK",
+                "eliminada", eliminada,
+                "nombre", name.trim(),
+                "mensaje", "La cola '" + name.trim() + "' fue eliminada exitosamente de RabbitMQ."
+        ));
     }
 
     // =========================================================================
