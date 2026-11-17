@@ -15,6 +15,7 @@ import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.TopicExchange;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -38,13 +39,12 @@ public class RabbitAdminService {
     private final RabbitAdmin rabbitAdmin;
 
     // Registro en memoria de colas activas para visualización en tiempo real
-    private final Set<String> colasRegistradas = new ConcurrentSkipListSet<>(Set.of(
-            "pedidos.notificacion.queue",
-            "pedidos.dlq"
-    ));
+    private final Set<String> colasRegistradas = new ConcurrentSkipListSet<>();
 
-    public RabbitAdminService(RabbitAdmin rabbitAdmin) {
+    public RabbitAdminService(RabbitAdmin rabbitAdmin,
+                              @Value("${app.rabbitmq.managed-queues}") List<String> managedQueues) {
         this.rabbitAdmin = rabbitAdmin;
+        managedQueues.stream().map(String::trim).filter(n -> !n.isEmpty()).forEach(colasRegistradas::add);
     }
 
     /**
