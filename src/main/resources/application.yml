@@ -7,6 +7,8 @@ spring:
 
   # Configuración de Conexión a RabbitMQ para tareas administrativas
   rabbitmq:
+    # Clúster: si cae un nodo, el cliente se conecta al otro
+    addresses: ${RABBITMQ_ADDRESSES:localhost:5672,localhost:5673}
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:guest}
@@ -17,3 +19,10 @@ logging:
   level:
     cl.tnt.admin: DEBUG
     org.springframework.amqp: INFO
+
+app:
+  rabbitmq:
+    # Colas que el administrador lista por defecto (separadas por coma)
+    managed-queues: >-
+      pedidos.notificacion.queue,pedidos.ticket.queue,pedidos.auditoria.queue,
+      pedidos.notificacion.dlq,pedidos.ticket.dlq,pedidos.auditoria.dlq
